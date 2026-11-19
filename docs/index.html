@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>ArtVault 갤러리</title>
+<style>
+  :root {
+    --bg: #111; --card: #1b1b1b; --text: #f2f2f2; --muted: #9a9a9a;
+    --accent: #e8c27a; --radius: 16px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  header { position: sticky; top: 0; z-index: 10; background: rgba(17,17,17,.94);
+    backdrop-filter: blur(10px); padding: 14px 14px 10px; padding-top: calc(14px + env(safe-area-inset-top)); }
+  h1 { font-size: 22px; margin: 0 0 10px; letter-spacing: -.3px; }
+  h1 span { color: var(--accent); }
+  .search { display: flex; gap: 8px; }
+  .search input { flex: 1; min-width: 0; font-size: 16px; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid #333; background: #1d1d1d; color: var(--text); }
+  .search button, .toggle { font-size: 15px; padding: 0 16px; border-radius: 12px; border: 0;
+    background: var(--accent); color: #111; font-weight: 700; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; padding: 9px 14px; border-radius: 999px; border: 1px solid #333;
+    background: #1d1d1d; color: var(--text); font-size: 14px; }
+  .chip.on { background: var(--text); color: #111; border-color: var(--text); font-weight: 700; }
+  .bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; color: var(--muted); font-size: 13px; }
+  .toggle { height: 34px; background: #2a2a2a; color: var(--text); font-weight: 500; }
+  main { padding: 0 12px 40px; display: grid; gap: 14px; grid-template-columns: 1fr; }
+  main.two { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card { background: var(--card); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+  .card img { width: 100%; display: block; background: #222; min-height: 200px; object-fit: cover; }
+  main.two .card img { min-height: 120px; }
+  .card .info { padding: 10px 12px 12px; }
+  .card .t { font-size: 16px; font-weight: 600; line-height: 1.3; }
+  main.two .card .t { font-size: 13px; }
+  .card .a { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  main.two .card .a { display: none; }
+  .more { display: block; margin: 0 auto 50px; padding: 14px 28px; font-size: 16px; border-radius: 12px;
+    border: 1px solid #444; background: transparent; color: var(--text); }
+  .msg { text-align: center; color: var(--muted); padding: 40px 20px; grid-column: 1 / -1; }
+
+  /* 상세 보기 */
+  .viewer { position: fixed; inset: 0; z-index: 50; background: #000; display: none; flex-direction: column; }
+  .viewer.open { display: flex; }
+  .viewer .top { display: flex; justify-content: flex-end; padding: 10px; padding-top: calc(10px + env(safe-area-inset-top)); }
+  .viewer .close { width: 44px; height: 44px; border-radius: 50%; border: 0; background: #222; color: #fff; font-size: 22px; }
+  .viewer .imgwrap { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; }
+  .viewer .imgwrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .viewer .bottom { padding: 14px 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); background: #0d0d0d; }
+  .viewer .vt { font-size: 18px; font-weight: 700; }
+  .viewer .va { font-size: 14px; color: var(--muted); margin: 4px 0 14px; }
+  .btns { display: flex; gap: 10px; }
+  .btns a { flex: 1; text-align: center; text-decoration: none; padding: 14px 10px; border-radius: 12px; font-weight: 700; font-size: 15px; }
+  .btns .dl { background: var(--accent); color: #111; }
+  .btns .src { background: #2a2a2a; color: #fff; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Art<span>Vault</span> 갤러리</h1>
+  <form class="search" id="form">
+    <input id="q" type="search" placeholder="작가 이름 (영문) 예: Claude Monet" autocomplete="off">
+    <button type="submit">검색</button>
+  </form>
+  <div class="chips" id="chips"></div>
+</header>
+<div class="bar"><span id="count">불러오는 중…</span><button class="toggle" id="toggle">2열 보기</button></div>
+<main id="grid"></main>
+<button class="more" id="more" hidden>더 보기</button>
+
+<div class="viewer" id="viewer">
+  <div class="top"><button class="close" id="close" aria-label="닫기">✕</button></div>
+  <div class="imgwrap"><img id="vimg" alt=""></div>
+  <div class="bottom">
+    <div class="vt" id="vt"></div>
+    <div class="va" id="va"></div>
+    <div class="btns">
+      <a class="dl" id="vdl" target="_blank" rel="noopener">고화질 원본 열기</a>
+      <a class="src" id="vsrc" target="_blank" rel="noopener">미술관 페이지</a>
+    </div>
+    <div class="hint">원본이 열리면 이미지를 길게 눌러 저장하세요 · 미술관 페이지에도 다운로드 버튼이 있어요</div>
+  </div>
+</div>
+
+<script>
+// 데이터: 시카고 미술관(Art Institute of Chicago) 오픈 API — 퍼블릭 도메인 작품만 표시
+const API = "https://api.artic.edu/api/v1/artworks/search";
+const IIIF = "https://www.artic.edu/iiif/2";
+const ARTISTS = [
+  ["고흐", "Vincent van Gogh"], ["모네", "Claude Monet"], ["르누아르", "Pierre-Auguste Renoir"],
+  ["세잔", "Paul Cézanne"], ["드가", "Edgar Degas"], ["고갱", "Paul Gauguin"],
+  ["쇠라", "Georges Seurat"], ["호쿠사이", "Katsushika Hokusai"], ["카유보트", "Gustave Caillebotte"],
+  ["피사로", "Camille Pissarro"], ["마네", "Édouard Manet"], ["툴루즈로트레크", "Henri de Toulouse-Lautrec"]
+];
+const PER_PAGE = 24;
+let state = { artist: ARTISTS[0][1], page: 1, total: 0, loaded: 0 };
+
+const $ = id => document.getElementById(id);
+const grid = $("grid"), moreBtn = $("more");
+
+function img(id, w) { return `${IIIF}/${id}/full/${w},/0/default.jpg`; }
+
+function renderChips() {
+  $("chips").innerHTML = "";
+  ARTISTS.forEach(([ko, en]) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (en === state.artist ? " on" : "");
+    b.textContent = ko;
+    b.onclick = () => { $("q").value = ""; load(en, true); };
+    $("chips").appendChild(b);
+  });
+}
+
+async function fetchPage(artist, page) {
+  const params = {
+    query: { bool: { must: [
+      { match: { artist_title: { query: artist, operator: "and" } } },
+      { term: { is_public_domain: true } },
+      { exists: { field: "image_id" } }
+    ] } },
+    fields: ["id", "title", "image_id", "artist_title", "date_display"],
+    limit: PER_PAGE, page
+  };
+  const r = await fetch(`${API}?params=${encodeURIComponent(JSON.stringify(params))}`);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function load(artist, reset) {
+  if (reset) {
+    state = { artist, page: 1, total: 0, loaded: 0 };
+    grid.innerHTML = "";
+    renderChips();
+    window.scrollTo(0, 0);
+  }
+  $("count").textContent = "불러오는 중…";
+  moreBtn.hidden = true;
+  try {
+    const data = await fetchPage(state.artist, state.page);
+    state.total = data.pagination.total;
+    const items = data.data.filter(d => d.image_id);
+    items.forEach(addCard);
+    state.loaded += data.data.length;
+    if (!grid.children.length) {
+      grid.innerHTML = `<div class="msg">‘${state.artist}’의 퍼블릭 도메인 작품을 찾지 못했어요.<br>영문 이름을 확인해 보세요.</div>`;
+    }
+    $("count").textContent = `${state.artist} · ${state.total}점`;
+    moreBtn.hidden = state.loaded >= state.total;
+  } catch (e) {
+    $("count").textContent = "불러오기 실패";
+    grid.insertAdjacentHTML("beforeend", `<div class="msg">작품을 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</div>`);
+  }
+}
+
+function addCard(d) {
+  const c = document.createElement("div");
+  c.className = "card";
+  c.innerHTML = `<img loading="lazy" alt="">
+    <div class="info"><div class="t"></div><div class="a"></div></div>`;
+  c.querySelector("img").src = img(d.image_id, 843);
+  c.querySelector(".t").textContent = d.title;
+  c.querySelector(".a").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
+  c.onclick = () => openViewer(d);
+  grid.appendChild(c);
+}
+
+function openViewer(d) {
+  $("vimg").src = img(d.image_id, 843);
+  // 큰 이미지 미리 불러와서 교체
+  const big = new Image();
+  big.onload = () => { $("vimg").src = big.src; };
+  big.src = img(d.image_id, 1686);
+  $("vt").textContent = d.title;
+  $("va").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
+  $("vdl").href = `${IIIF}/${d.image_id}/full/max/0/default.jpg`;
+  $("vsrc").href = `https://www.artic.edu/artworks/${d.id}`;
+  $("viewer").classList.add("open");
+  document.body.style.overflow = "hidden";
+  history.pushState({ viewer: true }, "");
+}
+function closeViewer() {
+  $("viewer").classList.remove("open");
+  document.body.style.overflow = "";
+}
+$("close").onclick = () => history.back();
+window.addEventListener("popstate", closeViewer); // 폰 뒤로가기로 닫기
+
+moreBtn.onclick = () => { state.page++; load(state.artist, false); };
+$("form").onsubmit = e => {
+  e.preventDefault();
+  const v = $("q").value.trim();
+  if (v) { $("q").blur(); load(v, true); }
+};
+$("toggle").onclick = () => {
+  const two = grid.classList.toggle("two");
+  $("toggle").textContent = two ? "1열 보기" : "2열 보기";
+};
+
+renderChips();
+load(state.artist, true);
+</script>
+</body>
+</html>
