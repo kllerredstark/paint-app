@@ -88,22 +88,20 @@
 </div>
 
 <script>
-// 데이터: 시카고 미술관(Art Institute of Chicago) 오픈 API — 퍼블릭 도메인 작품만 표시
-const API = "https://api.artic.edu/api/v1/artworks/search";
-const IIIF = "https://www.artic.edu/iiif/2";
+// 데이터: 메트로폴리탄 미술관(The Met) 오픈 액세스 API — 퍼블릭 도메인 작품만 표시
+const SEARCH = "https://collectionapi.metmuseum.org/public/collection/v1.1/search";
+const OBJ = "https://collectionapi.metmuseum.org/public/collection/v1/objects";
 const ARTISTS = [
-  ["고흐", "Vincent van Gogh"], ["모네", "Claude Monet"], ["르누아르", "Pierre-Auguste Renoir"],
+  ["고흐", "Vincent van Gogh"], ["모네", "Claude Monet"], ["르누아르", "Auguste Renoir"],
   ["세잔", "Paul Cézanne"], ["드가", "Edgar Degas"], ["고갱", "Paul Gauguin"],
-  ["쇠라", "Georges Seurat"], ["호쿠사이", "Katsushika Hokusai"], ["카유보트", "Gustave Caillebotte"],
-  ["피사로", "Camille Pissarro"], ["마네", "Édouard Manet"], ["툴루즈로트레크", "Henri de Toulouse-Lautrec"]
+  ["쇠라", "Georges Seurat"], ["호쿠사이", "Katsushika Hokusai"], ["렘브란트", "Rembrandt"],
+  ["페르메이르", "Johannes Vermeer"], ["마네", "Edouard Manet"], ["클림트", "Gustav Klimt"]
 ];
 const PER_PAGE = 24;
 let state = { artist: ARTISTS[0][1], page: 1, total: 0, loaded: 0 };
 
 const $ = id => document.getElementById(id);
 const grid = $("grid"), moreBtn = $("more");
-
-function img(id, w) { return `${IIIF}/${id}/full/${w},/0/default.jpg`; }
 
 function renderChips() {
   $("chips").innerHTML = "";
@@ -117,18 +115,18 @@ function renderChips() {
 }
 
 async function fetchPage(artist, page) {
-  const params = {
-    query: { bool: { must: [
-      { match: { artist_title: { query: artist, operator: "and" } } },
-      { term: { is_public_domain: true } },
-      { exists: { field: "image_id" } }
-    ] } },
-    fields: ["id", "title", "image_id", "artist_title", "date_display"],
-    limit: PER_PAGE, page
-  };
-  const r = await fetch(`${API}?params=${encodeURIComponent(JSON.stringify(params))}`);
+  const u = `${SEARCH}?artistOrCulture=true&hasImages=true&q=${encodeURIComponent(artist)}&limit=${PER_PAGE}&offset=${(page - 1) * PER_PAGE}`;
+  const r = await fetch(u);
   if (!r.ok) throw new Error(r.status);
-  return r.json();
+  const res = await r.json();
+  const ids = res.objectIDs || [];
+  const objs = await Promise.all(ids.map(id =>
+    fetch(`${OBJ}/${id}`).then(x => x.ok ? x.json() : null).catch(() => null)));
+  const items = objs.filter(o => o && o.isPublicDomain && o.primaryImage).map(o => ({
+    id: o.objectID, title: o.title, artist_title: o.artistDisplayName, date_display: o.objectDate,
+    small: o.primaryImageSmall || o.primaryImage, full: o.primaryImage, url: o.objectURL
+  }));
+  return { total: res.total || 0, count: ids.length, items };
 }
 
 async function load(artist, reset) {
@@ -142,14 +140,13 @@ async function load(artist, reset) {
   moreBtn.hidden = true;
   try {
     const data = await fetchPage(state.artist, state.page);
-    state.total = data.pagination.total;
-    const items = data.data.filter(d => d.image_id);
-    items.forEach(addCard);
-    state.loaded += data.data.length;
+    state.total = data.total;
+    data.items.forEach(addCard);
+    state.loaded += data.count;
     if (!grid.children.length) {
       grid.innerHTML = `<div class="msg">‘${state.artist}’의 퍼블릭 도메인 작품을 찾지 못했어요.<br>영문 이름을 확인해 보세요.</div>`;
     }
-    $("count").textContent = `${state.artist} · ${state.total}점`;
+    $("count").textContent = `${state.artist} · 검색 결과 ${state.total}건`;
     moreBtn.hidden = state.loaded >= state.total;
   } catch (e) {
     $("count").textContent = "불러오기 실패";
@@ -162,7 +159,7 @@ function addCard(d) {
   c.className = "card";
   c.innerHTML = `<img loading="lazy" alt="">
     <div class="info"><div class="t"></div><div class="a"></div></div>`;
-  c.querySelector("img").src = img(d.image_id, 843);
+  c.querySelector("img").src = d.small;
   c.querySelector(".t").textContent = d.title;
   c.querySelector(".a").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
   c.onclick = () => openViewer(d);
@@ -170,15 +167,11 @@ function addCard(d) {
 }
 
 function openViewer(d) {
-  $("vimg").src = img(d.image_id, 843);
-  // 큰 이미지 미리 불러와서 교체
-  const big = new Image();
-  big.onload = () => { $("vimg").src = big.src; };
-  big.src = img(d.image_id, 1686);
+  $("vimg").src = d.small;
   $("vt").textContent = d.title;
   $("va").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
-  $("vdl").href = `${IIIF}/${d.image_id}/full/max/0/default.jpg`;
-  $("vsrc").href = `https://www.artic.edu/artworks/${d.id}`;
+  $("vdl").href = d.full;
+  $("vsrc").href = d.url;
   $("viewer").classList.add("open");
   document.body.style.overflow = "hidden";
   history.pushState({ viewer: true }, "");
