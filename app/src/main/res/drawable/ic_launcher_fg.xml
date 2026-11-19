@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- 액자 -->
+    <path android:fillColor="#1F1D1A"
+        android:pathData="M30,32h48a4,4 0,0 1,4 4v36a4,4 0,0 1,-4 4h-48a4,4 0,0 1,-4 -4v-36a4,4 0,0 1,4 -4z"/>
+    <path android:fillColor="#FBF9F4"
+        android:pathData="M32,38h44v32h-44z"/>
+    <!-- 해 -->
+    <path android:fillColor="#B4502E"
+        android:pathData="M66,47m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0"/>
+    <!-- 산 -->
+    <path android:fillColor="#B4502E"
+        android:pathData="M32,70l14,-18l10,12l6,-6l14,12z"/>
+</vector>
