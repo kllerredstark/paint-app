@@ -12,8 +12,8 @@ android {
         applicationId = "com.redstars.artvault"
         minSdk = 28
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     // 고정 서명 키: 빌드할 때마다 같은 키로 서명해야 덮어 설치(업데이트)가 되고 작품이 유지됨
