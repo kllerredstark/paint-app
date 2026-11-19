@@ -64,7 +64,7 @@
 <header>
   <h1>Art<span>Vault</span> 갤러리</h1>
   <form class="search" id="form">
-    <input id="q" type="search" placeholder="작가 이름 (영문) 예: Claude Monet" autocomplete="off">
+    <input id="q" type="search" placeholder="작가 이름 (한글/영문) 예: 모네, Klimt" autocomplete="off">
     <button type="submit">검색</button>
   </form>
   <div class="chips" id="chips"></div>
@@ -81,27 +81,40 @@
     <div class="va" id="va"></div>
     <div class="btns">
       <a class="dl" id="vdl" target="_blank" rel="noopener">고화질 원본 열기</a>
-      <a class="src" id="vsrc" target="_blank" rel="noopener">미술관 페이지</a>
+      <a class="src" id="vsrc" target="_blank" rel="noopener">출처 페이지</a>
     </div>
-    <div class="hint">원본이 열리면 이미지를 길게 눌러 저장하세요 · 미술관 페이지에도 다운로드 버튼이 있어요</div>
+    <div class="hint">원본이 열리면 이미지를 길게 눌러 저장하세요 · 출처 페이지에서 다른 해상도도 받을 수 있어요</div>
   </div>
 </div>
 
 <script>
-// 데이터: 메트로폴리탄 미술관(The Met) 오픈 액세스 API — 퍼블릭 도메인 작품만 표시
-const SEARCH = "https://collectionapi.metmuseum.org/public/collection/v1.1/search";
-const OBJ = "https://collectionapi.metmuseum.org/public/collection/v1/objects";
+// 데이터: 위키데이터 + 위키미디어 공용(Wikimedia Commons) — 자유 이용 가능한 이미지만 있는 곳
+const WD_SEARCH = "https://www.wikidata.org/w/api.php";
+const SPARQL = "https://query.wikidata.org/sparql";
 const ARTISTS = [
-  ["고흐", "Vincent van Gogh"], ["모네", "Claude Monet"], ["르누아르", "Auguste Renoir"],
+  ["고흐", "Vincent van Gogh"], ["모네", "Claude Monet"], ["르누아르", "Pierre-Auguste Renoir"],
   ["세잔", "Paul Cézanne"], ["드가", "Edgar Degas"], ["고갱", "Paul Gauguin"],
   ["쇠라", "Georges Seurat"], ["호쿠사이", "Katsushika Hokusai"], ["렘브란트", "Rembrandt"],
-  ["페르메이르", "Johannes Vermeer"], ["마네", "Edouard Manet"], ["클림트", "Gustav Klimt"]
+  ["페르메이르", "Johannes Vermeer"], ["마네", "Édouard Manet"], ["클림트", "Gustav Klimt"]
 ];
 const PER_PAGE = 24;
-let state = { artist: ARTISTS[0][1], page: 1, total: 0, loaded: 0 };
+let state = { artist: ARTISTS[0][1], page: 1, total: 0, loaded: 0, qid: null, label: "" };
+let reqId = 0; // 버튼을 빠르게 바꿀 때 이전 요청 결과 무시용
 
 const $ = id => document.getElementById(id);
 const grid = $("grid"), moreBtn = $("more");
+const fileUrl = (name, w) => `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}${w ? `?width=${w}` : ""}`;
+
+async function resolveArtist(name) {
+  for (const lang of ["ko", "en"]) {
+    const u = `${WD_SEARCH}?action=wbsearchentities&format=json&origin=*&type=item&limit=1&language=${lang}&uselang=ko&search=${encodeURIComponent(name)}`;
+    const r = await fetch(u);
+    if (!r.ok) continue;
+    const j = await r.json();
+    if (j.search && j.search.length) return { qid: j.search[0].id, label: j.search[0].label };
+  }
+  return null;
+}
 
 function renderChips() {
   $("chips").innerHTML = "";
@@ -114,43 +127,57 @@ function renderChips() {
   });
 }
 
-async function fetchPage(artist, page) {
-  const u = `${SEARCH}?artistOrCulture=true&hasImages=true&q=${encodeURIComponent(artist)}&limit=${PER_PAGE}&offset=${(page - 1) * PER_PAGE}`;
-  const r = await fetch(u);
+async function fetchPage(page) {
+  if (!state.qid) {
+    const a = await resolveArtist(state.artist);
+    if (!a) return { items: [], count: 0 };
+    state.qid = a.qid; state.label = a.label;
+  }
+  const q = `SELECT ?item ?itemLabel (SAMPLE(?img) AS ?image) (SAMPLE(?date) AS ?d) WHERE {
+    ?item wdt:P170 wd:${state.qid}; wdt:P18 ?img; wikibase:sitelinks ?sl.
+    OPTIONAL { ?item wdt:P571 ?date }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "ko,en". }
+  } GROUP BY ?item ?itemLabel ?sl ORDER BY DESC(?sl) ?item LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`;
+  const r = await fetch(`${SPARQL}?format=json&query=${encodeURIComponent(q)}`, { headers: { Accept: "application/sparql-results+json" } });
   if (!r.ok) throw new Error(r.status);
-  const res = await r.json();
-  const ids = res.objectIDs || [];
-  const objs = await Promise.all(ids.map(id =>
-    fetch(`${OBJ}/${id}`).then(x => x.ok ? x.json() : null).catch(() => null)));
-  const items = objs.filter(o => o && o.isPublicDomain && o.primaryImage).map(o => ({
-    id: o.objectID, title: o.title, artist_title: o.artistDisplayName, date_display: o.objectDate,
-    small: o.primaryImageSmall || o.primaryImage, full: o.primaryImage, url: o.objectURL
-  }));
-  return { total: res.total || 0, count: ids.length, items };
+  const rows = (await r.json()).results.bindings;
+  const items = rows.map(b => {
+    const file = decodeURIComponent(b.image.value.split("/Special:FilePath/")[1]);
+    return {
+      title: b.itemLabel ? b.itemLabel.value : "제목 없음",
+      artist_title: state.label,
+      date_display: b.d ? b.d.value.slice(0, 4) : "",
+      small: fileUrl(file, 800), large: fileUrl(file, 1600), full: fileUrl(file),
+      url: `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(file.replace(/ /g, "_"))}`
+    };
+  });
+  return { items, count: rows.length };
 }
 
 async function load(artist, reset) {
   if (reset) {
-    state = { artist, page: 1, total: 0, loaded: 0 };
+    state = { artist, page: 1, total: 0, loaded: 0, qid: null, label: "" };
     grid.innerHTML = "";
     renderChips();
     window.scrollTo(0, 0);
   }
+  const my = ++reqId;
   $("count").textContent = "불러오는 중…";
   moreBtn.hidden = true;
   try {
-    const data = await fetchPage(state.artist, state.page);
-    state.total = data.total;
+    const data = await fetchPage(state.page);
+    if (my !== reqId) return;
     data.items.forEach(addCard);
-    state.loaded += data.count;
+    state.loaded += data.items.length;
     if (!grid.children.length) {
-      grid.innerHTML = `<div class="msg">‘${state.artist}’의 퍼블릭 도메인 작품을 찾지 못했어요.<br>영문 이름을 확인해 보세요.</div>`;
+      grid.innerHTML = `<div class="msg">‘${state.artist}’의 작품을 찾지 못했어요.<br>이름을 다르게 입력해 보세요.</div>`;
     }
-    $("count").textContent = `${state.artist} · 검색 결과 ${state.total}건`;
-    moreBtn.hidden = state.loaded >= state.total;
+    $("count").textContent = `${state.label || state.artist} · ${state.loaded}점`;
+    moreBtn.hidden = data.count < PER_PAGE;
   } catch (e) {
+    if (my !== reqId) return;
     $("count").textContent = "불러오기 실패";
-    grid.insertAdjacentHTML("beforeend", `<div class="msg">작품을 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</div>`);
+    grid.insertAdjacentHTML("beforeend", `<div class="msg">작품을 불러오지 못했어요. 잠시 후 다시 눌러 주세요.</div>`);
   }
 }
 
@@ -168,6 +195,9 @@ function addCard(d) {
 
 function openViewer(d) {
   $("vimg").src = d.small;
+  const big = new Image();
+  big.onload = () => { if ($("vt").textContent === d.title) $("vimg").src = big.src; };
+  big.src = d.large;
   $("vt").textContent = d.title;
   $("va").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
   $("vdl").href = d.full;
