@@ -136,7 +136,7 @@ async function fetchPage(page) {
   const q = `SELECT ?item ?itemLabel (SAMPLE(?img) AS ?image) (SAMPLE(?date) AS ?d) WHERE {
     ?item wdt:P170 wd:${state.qid}; wdt:P18 ?img; wikibase:sitelinks ?sl.
     OPTIONAL { ?item wdt:P571 ?date }
-    SERVICE wikibase:label { bd:serviceParam wikibase:language "ko,en". }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "ko,en,fr,de,nl,es,it,ja,mul". }
   } GROUP BY ?item ?itemLabel ?sl ORDER BY DESC(?sl) ?item LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`;
   const r = await fetch(`${SPARQL}?format=json&query=${encodeURIComponent(q)}`, { headers: { Accept: "application/sparql-results+json" } });
   if (!r.ok) throw new Error(r.status);
@@ -144,7 +144,7 @@ async function fetchPage(page) {
   const items = rows.map(b => {
     const file = decodeURIComponent(b.image.value.split("/Special:FilePath/")[1]);
     return {
-      title: b.itemLabel ? b.itemLabel.value : "제목 없음",
+      title: b.itemLabel && !/^Q\d+$/.test(b.itemLabel.value) ? b.itemLabel.value : "제목 없음",
       artist_title: state.label,
       date_display: b.d ? b.d.value.slice(0, 4) : "",
       small: fileUrl(file, 800), large: fileUrl(file, 1600), full: fileUrl(file),
@@ -188,7 +188,7 @@ function addCard(d) {
     <div class="info"><div class="t"></div><div class="a"></div></div>`;
   c.querySelector("img").src = d.small;
   c.querySelector(".t").textContent = d.title;
-  c.querySelector(".a").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
+  c.querySelector(".a").textContent = [d.artist_title, d.date_display].filter(Boolean).join(" · ");
   c.onclick = () => openViewer(d);
   grid.appendChild(c);
 }
@@ -199,7 +199,7 @@ function openViewer(d) {
   big.onload = () => { if ($("vt").textContent === d.title) $("vimg").src = big.src; };
   big.src = d.large;
   $("vt").textContent = d.title;
-  $("va").textContent = `${d.artist_title || ""} · ${d.date_display || ""}`;
+  $("va").textContent = [d.artist_title, d.date_display].filter(Boolean).join(" · ");
   $("vdl").href = d.full;
   $("vsrc").href = d.url;
   $("viewer").classList.add("open");
