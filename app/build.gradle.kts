@@ -12,15 +12,27 @@ android {
         applicationId = "com.redstars.artvault"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+    }
+
+    // 고정 서명 키: 빌드할 때마다 같은 키로 서명해야 덮어 설치(업데이트)가 되고 작품이 유지됨
+    signingConfigs {
+        create("artvault") {
+            storeFile = file("artvault.jks")
+            storePassword = "artvault123"
+            keyAlias = "artvault"
+            keyPassword = "artvault123"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // 개인용: 디버그 키로 서명해서 바로 설치할 수 있게 함
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("artvault")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("artvault")
         }
     }
     compileOptions {

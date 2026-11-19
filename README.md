@@ -49,3 +49,6 @@ app/src/main/java/com/redstars/artvault/
 
 ## 버전
 AGP 8.7.3 · Kotlin 2.0.21 · Gradle 8.10.2 · compileSdk 35 · minSdk 28 (Android 9 이상)
+
+## 아이콘 출처
+Charles Ethan Porter, *Untitled (Cracked Watermelon)*, ca. 1890 — The Metropolitan Museum of Art (Public Domain)
