@@ -130,14 +130,25 @@ function renderChips() {
   });
 }
 
+async function fetchTotal(qid) {
+  const q = `SELECT (COUNT(DISTINCT ?item) AS ?n) WHERE { ?item wdt:P170 wd:${qid}; wdt:P18 ?img. }`;
+  try {
+    const r = await fetch(`${SPARQL}?format=json&query=${encodeURIComponent(q)}`, { headers: { Accept: "application/sparql-results+json" } });
+    const j = await r.json();
+    return parseInt(j.results.bindings[0].n.value, 10) || 0;
+  } catch (e) { return 0; }
+}
+
 async function fetchPage(page) {
-  if (!state.qid) {
-    const a = await resolveArtist(state.artist);
+  const st = state; // 작가를 바꾸는 도중에 섞이지 않도록 고정
+  if (!st.qid) {
+    const a = await resolveArtist(st.artist);
     if (!a) return { items: [], count: 0 };
-    state.qid = a.qid; state.label = a.label;
+    st.qid = a.qid; st.label = a.label;
+    fetchTotal(st.qid).then(n => { st.total = n; if (st === state) updateCount(); });
   }
   const q = `SELECT ?item ?itemLabel (SAMPLE(?img) AS ?image) (SAMPLE(?date) AS ?d) WHERE {
-    ?item wdt:P170 wd:${state.qid}; wdt:P18 ?img; wikibase:sitelinks ?sl.
+    ?item wdt:P170 wd:${st.qid}; wdt:P18 ?img; wikibase:sitelinks ?sl.
     OPTIONAL { ?item wdt:P571 ?date }
     SERVICE wikibase:label { bd:serviceParam wikibase:language "ko,en,fr,de,nl,es,it,ja,mul". }
   } GROUP BY ?item ?itemLabel ?sl ORDER BY DESC(?sl) ?item LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`;
@@ -148,7 +159,7 @@ async function fetchPage(page) {
     const file = decodeURIComponent(b.image.value.split("/Special:FilePath/")[1]);
     return {
       title: b.itemLabel && !/^Q\d+$/.test(b.itemLabel.value) ? b.itemLabel.value : "제목 없음",
-      artist_title: state.label,
+      artist_title: st.label,
       date_display: b.d ? b.d.value.slice(0, 4) : "",
       small: fileUrl(file, 800), large: fileUrl(file, 1600), full: fileUrl(file),
       url: `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(file.replace(/ /g, "_"))}`
@@ -164,24 +175,38 @@ async function load(artist, reset) {
     renderChips();
     window.scrollTo(0, 0);
   }
+  if (state.busy) return;
+  state.busy = true;
   const my = ++reqId;
-  $("count").textContent = "불러오는 중…";
+  $("count").textContent = state.loaded ? $("count").textContent : "불러오는 중…";
   moreBtn.hidden = true;
   try {
     const data = await fetchPage(state.page);
     if (my !== reqId) return;
+    state.busy = false;
     data.items.forEach(addCard);
     state.loaded += data.items.length;
     if (!grid.children.length) {
       grid.innerHTML = `<div class="msg">‘${state.artist}’의 작품을 찾지 못했어요.<br>이름을 다르게 입력해 보세요.</div>`;
     }
-    $("count").textContent = `${state.label || state.artist} · ${state.loaded}점`;
-    moreBtn.hidden = data.count < PER_PAGE;
+    state.done = data.count < PER_PAGE;
+    updateCount();
+    moreBtn.hidden = state.done;
   } catch (e) {
     if (my !== reqId) return;
+    state.busy = false;
+    if (state.page > 1) state.page--; // 다시 누르면 같은 페이지부터
+    moreBtn.hidden = false;
     $("count").textContent = "불러오기 실패";
     grid.insertAdjacentHTML("beforeend", `<div class="msg">작품을 불러오지 못했어요. 잠시 후 다시 눌러 주세요.</div>`);
   }
+}
+
+function updateCount() {
+  const name = state.label || state.artist;
+  $("count").textContent = state.total
+    ? `${name} · 전체 ${state.total}점 중 ${state.loaded}점`
+    : `${name} · ${state.loaded}점`;
 }
 
 function addCard(d) {
@@ -216,7 +241,11 @@ function closeViewer() {
 $("close").onclick = () => history.back();
 window.addEventListener("popstate", closeViewer); // 폰 뒤로가기로 닫기
 
-moreBtn.onclick = () => { state.page++; load(state.artist, false); };
+moreBtn.onclick = () => { if (state.busy || state.done) return; state.page++; load(state.artist, false); };
+// 화면 아래쪽에 가까워지면 자동으로 더 불러오기
+new IntersectionObserver(es => {
+  if (es[0].isIntersecting && !moreBtn.hidden) moreBtn.click();
+}, { rootMargin: "800px" }).observe(moreBtn);
 $("form").onsubmit = e => {
   e.preventDefault();
   const v = $("q").value.trim();
